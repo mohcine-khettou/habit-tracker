@@ -1,103 +1,227 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { formatDate, useHabitStore } from "@/lib/habit-store";
+import { CalendarIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+
+export default function TrackHabitsPage() {
+  const { habits, trackingData, getTrackingDataForDate, updateHabitProgress } =
+    useHabitStore();
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [formattedDate, setFormattedDate] = useState<string>(
+    formatDate(new Date())
+  );
+  const [habitProgress, setHabitProgress] = useState<Record<string, number>>(
+    {}
+  );
+  const [isMounted, setIsMounted] = useState(false);
+  const { toast } = useToast();
+
+  // Memoize the sorted habits to prevent recalculation on every render
+  const { lastTwoHabits, olderHabits } = useMemo(() => {
+    // Sort habits by creation date (newest first)
+    const sortedHabits = [...habits].sort(
+      (a, b) =>
+        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+    );
+
+    // Get the last two habits
+    const lastTwo = sortedHabits.slice(0, 2);
+    // Get the rest of the habits
+    const older = sortedHabits.slice(2);
+
+    return { lastTwoHabits: lastTwo, olderHabits: older };
+  }, [habits]);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (isMounted) {
+      const dateStr = formatDate(selectedDate);
+      setFormattedDate(dateStr);
+
+      const existingData = getTrackingDataForDate(dateStr);
+
+      const newHabitProgress: Record<string, number> = {};
+
+      // Set default values for habits
+      habits.forEach((habit) => {
+        // For the last two habits, default to 0%
+        if (lastTwoHabits.some((h) => h.id === habit.id)) {
+          newHabitProgress[habit.id] =
+            existingData && existingData[habit.id] !== undefined
+              ? (existingData[habit.id] as number)
+              : 0;
+        }
+        // For older habits, default to 100%
+        else {
+          newHabitProgress[habit.id] =
+            existingData && existingData[habit.id] !== undefined
+              ? (existingData[habit.id] as number)
+              : 100;
+        }
+      });
+
+      setHabitProgress(newHabitProgress);
+    }
+  }, [selectedDate, habits, getTrackingDataForDate, isMounted, lastTwoHabits]);
+
+  // Only update local state when slider changes, don't save to store yet
+  const handleProgressChange = (habitId: string, value: number[]) => {
+    const newProgress = { ...habitProgress, [habitId]: value[0] };
+    setHabitProgress(newProgress);
+  };
+
+  // Save all habit progress at once when submit button is clicked
+  const handleSubmit = () => {
+    // Save each habit's progress to the store
+    Object.entries(habitProgress).forEach(([habitId, progress]) => {
+      updateHabitProgress(formattedDate, habitId, progress);
+    });
+
+    // Show toast notification
+    toast({
+      title: "Progress saved",
+      description: `Your habit progress for ${format(
+        selectedDate,
+        "PPP"
+      )} has been saved.`,
+    });
+  };
+
+  if (!isMounted) {
+    return null;
+  }
+  console.log(trackingData);
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Track Your Habits</h1>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+      <div className="flex items-center space-x-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-full justify-start text-left font-normal"
+            >
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {format(selectedDate, "PPP")}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={(date) => date && setSelectedDate(date)}
+              initialFocus
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {habits.length === 0 ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-center text-muted-foreground">
+              No habits created yet. Go to the Create tab to add your first
+              habit.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {/* Last two habits (newest) */}
+          {lastTwoHabits.map((habit) => (
+            <Card key={habit.id}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg">{habit.name}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Label htmlFor={`progress-${habit.id}`}>Progress</Label>
+                      <span className="text-sm font-medium">
+                        {habitProgress[habit.id] || 0}%
+                      </span>
+                    </div>
+                    <Slider
+                      id={`progress-${habit.id}`}
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={[habitProgress[habit.id] || 0]}
+                      onValueChange={(value) =>
+                        handleProgressChange(habit.id, value)
+                      }
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+
+          {/* Older habits */}
+          {olderHabits.length > 0 && (
+            <>
+              <h2 className="text-lg font-medium mt-6">Previous Habits</h2>
+              {olderHabits.map((habit) => (
+                <Card key={habit.id}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">{habit.name}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <Label htmlFor={`progress-${habit.id}`}>
+                            Progress
+                          </Label>
+                          <span className="text-sm font-medium">
+                            {habitProgress[habit.id] || 100}%
+                          </span>
+                        </div>
+                        <Slider
+                          id={`progress-${habit.id}`}
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={[habitProgress[habit.id] || 100]}
+                          onValueChange={(value) =>
+                            handleProgressChange(habit.id, value)
+                          }
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </>
+          )}
+
+          {/* Submit Button */}
+          <div className="pt-4">
+            <Button onClick={handleSubmit} className="w-full" size="lg">
+              Save Progress
+            </Button>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
     </div>
   );
 }
